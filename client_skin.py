@@ -65,6 +65,57 @@ def train_client_resnet_dp(
     return model_dp, epsilon
 
 # NO DP
+# def train_client_resnet_nodp(
+#     local_model,
+#     global_model,
+#     train_loader,
+#     mu,
+#     device,
+#     epochs=2,
+#     lr=0.1
+# ):
+#     """
+#     Standard PyTorch training loop WITHOUT Differential Privacy.
+#     Used for benchmarking the 'ceiling' of the model.
+#     """
+#     local_model.train()
+#     local_model.to(device)
+#     global_model.to(device)
+    
+#     criterion = nn.CrossEntropyLoss()
+    
+#     # Standard SGD Optimizer (No Opacus attached)
+#     optimizer = optim.SGD(
+#         filter(lambda p: p.requires_grad, local_model.parameters()),
+#         lr=lr,
+#         momentum=0.9
+#     )
+
+#     for epoch in range(epochs):
+#         for data, target in train_loader:
+#             data = data.to(device)
+            
+#             target = target.view(-1).long().to(device)
+#             optimizer.zero_grad()
+#             output = local_model(data)
+#             loss = criterion(output, target)
+
+#             # Add Proximal Penalty if mu > 0 (FedProx & FedShield logic)
+#             if mu > 0:
+#                 proximal_term = 0.0
+#                 for local_p, global_p in zip(local_model.parameters(), global_model.parameters()):
+#                     if local_p.requires_grad:
+#                         proximal_term += ((local_p - global_p) ** 2).sum()
+#                 loss += (mu / 2.0) * proximal_term
+
+#             loss.backward()
+#             optimizer.step()
+
+#     # Returns 0.0 for Epsilon since privacy is disabled
+#     return local_model, 0.0
+
+# implementing Normal ML/DL principles
+# NO DP
 def train_client_resnet_nodp(
     local_model,
     global_model,
@@ -76,7 +127,7 @@ def train_client_resnet_nodp(
 ):
     """
     Standard PyTorch training loop WITHOUT Differential Privacy.
-    Used for benchmarking the 'ceiling' of the model.
+    Includes L2 Regularization and Cosine Annealing Learning Rate.
     """
     local_model.train()
     local_model.to(device)
@@ -84,18 +135,23 @@ def train_client_resnet_nodp(
     
     criterion = nn.CrossEntropyLoss()
     
-    # Standard SGD Optimizer (No Opacus attached)
+    # NEW: Added weight_decay for structural penalty
     optimizer = optim.SGD(
         filter(lambda p: p.requires_grad, local_model.parameters()),
         lr=lr,
-        momentum=0.9
+        momentum=0.9,
+        weight_decay=1e-4 
     )
+
+    # NEW: Cosine Annealing drops LR smoothly over the course of local batches
+    total_steps = epochs * len(train_loader)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps)
 
     for epoch in range(epochs):
         for data, target in train_loader:
             data = data.to(device)
-            
             target = target.view(-1).long().to(device)
+            
             optimizer.zero_grad()
             output = local_model(data)
             loss = criterion(output, target)
@@ -110,6 +166,6 @@ def train_client_resnet_nodp(
 
             loss.backward()
             optimizer.step()
+            scheduler.step() # NEW: Step the LR scheduler per batch
 
-    # Returns 0.0 for Epsilon since privacy is disabled
     return local_model, 0.0
